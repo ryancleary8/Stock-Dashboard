@@ -100,20 +100,64 @@ export const fetchFromAlphaVantage = async (symbol, apiKey) => {
   };
 };
 
-const parseYahooQuoteData = (html) => {
+const parseJson = (value) => {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+};
+
+const extractYahooState = (html) => {
   const $ = load(html);
-  const scriptContent = $('#__NEXT_DATA__').text();
-  if (!scriptContent) throw new Error('Yahoo data script not found');
 
-  const parsed = JSON.parse(scriptContent);
-  const store = parsed?.props?.pageProps?.quoteSummaryStore;
+  const nextData = $('#__NEXT_DATA__').text().trim();
+  if (nextData) {
+    const parsed = parseJson(nextData);
+    if (parsed) return parsed;
+  }
+
+  const scriptBlocks = $('script')
+    .map((_i, el) => $(el).html() || '')
+    .get();
+
+  for (const block of scriptBlocks) {
+    const rootAppMatch = block.match(/root\.App\.main\s*=\s*(\{.*\})\s*;/s);
+    if (rootAppMatch?.[1]) {
+      const parsed = parseJson(rootAppMatch[1]);
+      if (parsed) return parsed;
+    }
+  }
+
+  return null;
+};
+
+const parseYahooQuoteData = (html) => {
+  const parsed = extractYahooState(html);
+  if (!parsed) throw new Error('Yahoo quote payload not found');
+
+  const store =
+    parsed?.props?.pageProps?.quoteSummaryStore ||
+    parsed?.context?.dispatcher?.stores?.QuoteSummaryStore ||
+    parsed?.context?.dispatcher?.stores?.StreamDataStore;
+
   const quoteData = parsed?.props?.pageProps?.quoteData;
+  const streamQuote =
+    store?.quoteData?.[0] ||
+    store?.quoteData ||
+    parsed?.context?.dispatcher?.stores?.QuoteSummaryStore?.price;
 
-  const symbol = quoteData?.symbol || store?.price?.symbol;
-  const companyName = quoteData?.shortName || store?.price?.shortName || symbol;
-  const price = quoteData?.regularMarketPrice;
-  const change = quoteData?.regularMarketChange;
-  const changePercent = quoteData?.regularMarketChangePercent;
+  const symbol = quoteData?.symbol || streamQuote?.symbol || store?.price?.symbol;
+  const companyName =
+    quoteData?.shortName || streamQuote?.shortName || store?.price?.shortName || symbol;
+  const price =
+    quoteData?.regularMarketPrice || streamQuote?.regularMarketPrice?.raw || store?.price?.regularMarketPrice?.raw;
+  const change =
+    quoteData?.regularMarketChange || streamQuote?.regularMarketChange?.raw || store?.price?.regularMarketChange?.raw;
+  const changePercent =
+    quoteData?.regularMarketChangePercent ||
+    streamQuote?.regularMarketChangePercent?.raw ||
+    store?.price?.regularMarketChangePercent?.raw;
 
   const chartRows = quoteData?.spark?.close || [];
   const chart = chartRows
@@ -147,11 +191,54 @@ export const fetchFromYahooScrape = async (symbol) => {
   return parseYahooQuoteData(res.data);
 };
 
+export const fetchFromYahooChartApi = async (symbol) => {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`;
+  const res = await http.get(url, {
+    params: { interval: '30m', range: '1d' },
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      Accept: 'application/json,text/plain,*/*'
+    }
+  });
+
+  const result = res.data?.chart?.result?.[0];
+  const quote = result?.meta;
+  if (!quote?.regularMarketPrice) throw new Error('Invalid Yahoo chart API response');
+
+  const closes = result?.indicators?.quote?.[0]?.close || [];
+  const timestamps = result?.timestamp || [];
+  const chart = closes
+    .map((value, idx) => ({ value, ts: timestamps[idx] }))
+    .filter((row) => typeof row.value === 'number' && Number.isFinite(row.value) && row.ts)
+    .slice(-30)
+    .map((row) => ({
+      time: new Date(row.ts * 1000).toISOString().slice(11, 16),
+      price: Number(row.value)
+    }));
+
+  const price = Number(quote.regularMarketPrice);
+  const previousClose = Number(quote.previousClose || 0);
+  const change = price - previousClose;
+  const changePercent = previousClose ? (change / previousClose) * 100 : 0;
+
+  return {
+    symbol: quote.symbol || symbol,
+    companyName: quote.shortName || quote.symbol || symbol,
+    price,
+    change,
+    changePercent,
+    currency: quote.currency || 'USD',
+    chart
+  };
+};
+
 export const fetchWithProviderFallback = async ({ symbol, finnhubKey, alphaKey }) => {
   const providers = [
     { name: 'finnhub', fn: () => fetchFromFinnhub(symbol, finnhubKey) },
     { name: 'alpha_vantage', fn: () => fetchFromAlphaVantage(symbol, alphaKey) },
-    { name: 'yahoo_scrape', fn: () => fetchFromYahooScrape(symbol) }
+    { name: 'yahoo_scrape', fn: () => fetchFromYahooScrape(symbol) },
+    { name: 'yahoo_chart_api', fn: () => fetchFromYahooChartApi(symbol) }
   ];
 
   let lastError;
