@@ -1,32 +1,28 @@
 # Stock Dashboard (Full Stack)
 
-A production-ready stock search application with a React + Tailwind frontend and a Node.js + Express backend.
+A production-minded stock search application with a React + Tailwind frontend and a Node.js + Express backend.
 
 ## Features
 
-- Search any stock ticker (e.g., `AAPL`, `TSLA`)
-- Shows:
-  - Company name
-  - Current price
-  - Absolute and percent change
-  - Mini intraday/weekly chart
-- Loading and resilient error states
-- Debounced search input + ticker auto-suggest
-- Recent searches persisted in local storage
-- Responsive, clean UI
-- Backend API aggregation with automatic scraping fallback
+- Anonymous stock search with resilient provider fallback
+- Optional user accounts with cookie-based sessions
+- Dedicated `/login` and `/signup` pages (main dashboard kept separate)
+- Per-user recent searches stored in database when signed in
+- Anonymous recent searches still persisted in localStorage fallback
+- Debounced symbol search input with suggestions
+- Favorites persisted client-side
 
 ## Tech Stack
 
 - **Frontend:** React (Vite), Tailwind CSS, Recharts
-- **Backend:** Node.js, Express, Axios, Cheerio
+- **Backend:** Node.js, Express, Prisma ORM, Argon2, JWT, SQLite (default)
 - **Data sources:** Yahoo Finance API, Alpaca API, Yahoo Finance scraping fallback
 
 ## Project Structure
 
-```
+```text
 /client   # React + Tailwind app
-/server   # Express API + data provider/fallback logic
+/server   # Express API + Prisma + auth/session logic
 ```
 
 ## Environment Variables
@@ -35,11 +31,28 @@ Create `server/.env`:
 
 ```bash
 PORT=4000
+CLIENT_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+
+# Stock providers
 ALPACA_API_KEY=your_alpaca_key
 ALPACA_SECRET_KEY=your_alpaca_secret
+
+# Auth/session
+JWT_SECRET=replace_with_a_long_random_secret
+JWT_EXPIRES_IN=7d
+AUTH_COOKIE_NAME=stockdash_session
+COOKIE_SECURE=false
+COOKIE_SAMESITE=lax
+
+# Database (SQLite default)
+DATABASE_URL=file:./dev.db
 ```
 
-> The app still works without API keys by using scraping fallback (subject to source availability).
+### Security notes
+
+- Set `COOKIE_SECURE=true` in production (HTTPS).
+- Keep `JWT_SECRET` private and rotate if compromised.
+- Never commit `.env` files.
 
 ## Install
 
@@ -47,6 +60,13 @@ From repo root:
 
 ```bash
 npm install
+```
+
+## Database setup + migrations
+
+```bash
+npm run prisma:generate --workspace server
+npm run prisma:migrate --workspace server
 ```
 
 ## Run locally
@@ -60,38 +80,109 @@ npm run dev
 
 ## API
 
-### `GET /api/stock?symbol=AAPL`
+### Public endpoints
 
-Returns:
+- `GET /api/health`
+- `GET /api/stock?symbol=AAPL`
+- `GET /api/suggest?q=app`
+
+### Auth endpoints
+
+#### `POST /api/auth/signup`
+
+Request:
+
+```json
+{ "email": "user@example.com", "password": "Password123" }
+```
+
+Response (`201`):
 
 ```json
 {
-  "symbol": "AAPL",
-  "companyName": "Apple Inc.",
-  "price": 187.21,
-  "change": -1.12,
-  "changePercent": -0.59,
-  "currency": "USD",
-  "source": "yahoo_chart_api",
-  "chart": [
-    { "time": "09:30", "price": 186.8 },
-    { "time": "10:00", "price": 187.1 }
-  ],
-  "fetchedAt": "2026-04-10T00:00:00.000Z"
+  "user": {
+    "id": 1,
+    "email": "user@example.com",
+    "createdAt": "2026-04-13T00:00:00.000Z",
+    "updatedAt": "2026-04-13T00:00:00.000Z"
+  }
 }
 ```
 
-### `GET /api/suggest?q=app`
+#### `POST /api/auth/login`
 
-Returns ticker suggestions for typeahead.
+Request:
 
-## How fallback scraping works
+```json
+{ "email": "user@example.com", "password": "Password123" }
+```
 
-1. Backend first tries quote providers in order:
-   - Yahoo Finance chart API
-   - Alpaca API (if credentials are present)
-2. If API errors, missing keys, or rate limits occur, backend automatically scrapes Yahoo Finance page data.
-3. Scraped results are normalized into the same JSON shape as API responses.
-4. Frontend remains source-agnostic and only consumes normalized data.
+Response (`200`): same user payload as signup.
 
-This makes fallback seamless for users even during provider downtime or quota exhaustion.
+#### `POST /api/auth/logout`
+
+Response: `204 No Content` (clears session cookie).
+
+#### `GET /api/auth/me`
+
+Response (`200`):
+
+```json
+{
+  "user": {
+    "id": 1,
+    "email": "user@example.com",
+    "createdAt": "2026-04-13T00:00:00.000Z",
+    "updatedAt": "2026-04-13T00:00:00.000Z"
+  }
+}
+```
+
+Response (`401`) if no valid session.
+
+### Authenticated user recent-search endpoints
+
+#### `GET /api/user/recent-searches`
+
+Response (`200`):
+
+```json
+{
+  "recentSearches": [
+    { "symbol": "MSFT", "updatedAt": "2026-04-13T00:00:00.000Z" },
+    { "symbol": "AAPL", "updatedAt": "2026-04-12T00:00:00.000Z" }
+  ]
+}
+```
+
+#### `POST /api/user/recent-searches`
+
+Request:
+
+```json
+{ "symbol": " aapl " }
+```
+
+Response (`201`):
+
+```json
+{ "recentSearch": { "symbol": "AAPL", "updatedAt": "2026-04-13T00:00:00.000Z" } }
+```
+
+Notes:
+- Symbol is normalized (trim + uppercase + validation).
+- Upsert semantics by `(userId, symbol)` with timestamp bump.
+- Recents are capped to latest 8 entries.
+
+## Tests
+
+Run backend tests:
+
+```bash
+npm run test --workspace server
+```
+
+Includes:
+- auth middleware protection checks
+- signup/login/session restore flow
+- authenticated recent-search read/write behavior
