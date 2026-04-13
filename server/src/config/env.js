@@ -20,12 +20,15 @@ const asBool = (value, fallback = false) => {
 };
 
 export const env = {
+  nodeEnv: process.env.NODE_ENV || 'development',
   port: Number(process.env.PORT || 4000),
   clientOrigins: (process.env.CLIENT_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173')
     .split(',')
     .map((v) => v.trim())
     .filter(Boolean),
-  jwtSecret: process.env.JWT_SECRET || '',
+  jwtSecret:
+    process.env.JWT_SECRET ||
+    (process.env.NODE_ENV === 'production' ? '' : 'dev-insecure-jwt-secret-change-me'),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   cookieName: process.env.AUTH_COOKIE_NAME || 'stockdash_session',
   cookieSecure: asBool(process.env.COOKIE_SECURE, process.env.NODE_ENV === 'production'),

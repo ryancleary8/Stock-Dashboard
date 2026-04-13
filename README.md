@@ -53,6 +53,7 @@ DATABASE_URL=file:./dev.db
 - Set `COOKIE_SECURE=true` in production (HTTPS).
 - Keep `JWT_SECRET` private and rotate if compromised.
 - Never commit `.env` files.
+- If `JWT_SECRET` is omitted in local development, the server now uses a temporary fallback secret and logs a warning. Always set a real secret outside local dev.
 
 ## Install
 

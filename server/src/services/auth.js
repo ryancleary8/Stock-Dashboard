@@ -11,8 +11,12 @@ const baseCookieOptions = {
 };
 
 export const assertAuthConfig = () => {
-  if (!env.jwtSecret) {
+  if (env.nodeEnv === 'production' && !env.jwtSecret) {
     throw new Error('JWT_SECRET is required.');
+  }
+
+  if (env.nodeEnv !== 'production' && env.jwtSecret === 'dev-insecure-jwt-secret-change-me') {
+    console.warn('[auth] Using fallback JWT secret for local development. Set JWT_SECRET in server/.env.');
   }
 };
 
