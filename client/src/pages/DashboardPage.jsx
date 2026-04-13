@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import PriceChart from '../components/PriceChart';
 import SearchInput from '../components/SearchInput';
 import { useAuth } from '../context/AuthContext';
@@ -11,6 +11,8 @@ const FAVORITES_KEY = 'stock-dashboard-favorites';
 
 function DashboardPage() {
   const { user, loading: authLoading, logout } = useAuth();
+  const navigate = useNavigate();
+  const { userId } = useParams();
   const [symbolInput, setSymbolInput] = useState('AAPL');
   const [stock, setStock] = useState(null);
   const [suggestions, setSuggestions] = useState([]);
@@ -31,14 +33,6 @@ function DashboardPage() {
     () => Boolean(stock?.symbol && favorites.includes(stock.symbol)),
     [favorites, stock?.symbol]
   );
-
-  const loadAnonymousRecent = () => {
-    try {
-      return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]');
-    } catch {
-      return [];
-    }
-  };
 
   const loadUserRecents = async () => {
     const data = await fetchJSON('/api/user/recent-searches', {
@@ -103,18 +97,24 @@ function DashboardPage() {
     loadStock('AAPL');
   }, []);
 
+  const normalizedRouteUserId = Number.parseInt(userId || '', 10);
+  const hasValidRouteUserId = Number.isInteger(normalizedRouteUserId);
+  const isOwnDashboard = Boolean(user && hasValidRouteUserId && user.id === normalizedRouteUserId);
+
   useEffect(() => {
     if (authLoading) return;
-
-    if (!user) {
-      setRecent(loadAnonymousRecent());
-      return;
-    }
+    if (!user || !isOwnDashboard) return;
 
     loadUserRecents()
       .then((items) => setRecent(items))
       .catch(() => setRecent([]));
-  }, [user, authLoading]);
+  }, [user, authLoading, isOwnDashboard]);
+
+  if (!authLoading && !user) return <Navigate to="/login" replace />;
+  if (!authLoading && user && !hasValidRouteUserId) return <Navigate to={`/dashboard/${user.id}`} replace />;
+  if (!authLoading && user && hasValidRouteUserId && !isOwnDashboard) {
+    return <Navigate to={`/dashboard/${user.id}`} replace />;
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -151,7 +151,10 @@ function DashboardPage() {
               <button
                 type="button"
                 className="mt-3 w-full rounded-lg border border-slate-700 px-3 py-2 text-sm hover:border-rose-400"
-                onClick={() => logout()}
+                onClick={async () => {
+                  await logout();
+                  navigate('/login');
+                }}
               >
                 Log out
               </button>

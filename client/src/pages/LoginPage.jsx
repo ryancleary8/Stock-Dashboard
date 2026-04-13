@@ -15,8 +15,8 @@ function LoginPage() {
     e.preventDefault();
     setError('');
     try {
-      await login({ email, password });
-      navigate('/');
+      const loggedInUser = await login({ email, password });
+      navigate(`/dashboard/${loggedInUser.id}`);
     } catch (err) {
       setError(err.message || 'Unable to sign in');
     }

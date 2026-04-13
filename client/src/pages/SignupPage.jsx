@@ -15,8 +15,8 @@ function SignupPage() {
     e.preventDefault();
     setError('');
     try {
-      await signup({ email, password });
-      navigate('/');
+      const createdUser = await signup({ email, password });
+      navigate(`/dashboard/${createdUser.id}`);
     } catch (err) {
       setError(err.message || 'Unable to create account');
     }

@@ -4,8 +4,15 @@ import DashboardPage from './pages/DashboardPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 
+function ProtectedDashboardRoute() {
+  const { user } = useAuth();
+
+  if (!user) return <Navigate to="/login" replace />;
+  return <DashboardPage />;
+}
+
 function AppRoutes() {
-  const { loading } = useAuth();
+  const { loading, user } = useAuth();
 
   if (loading) {
     return (
@@ -17,7 +24,11 @@ function AppRoutes() {
 
   return (
     <Routes>
-      <Route path="/" element={<DashboardPage />} />
+      <Route
+        path="/"
+        element={<Navigate to={user ? `/dashboard/${user.id}` : '/login'} replace />}
+      />
+      <Route path="/dashboard/:userId" element={<ProtectedDashboardRoute />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
