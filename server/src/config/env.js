@@ -1,4 +1,18 @@
-import 'dotenv/config';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
+
+const currentDir = path.dirname(fileURLToPath(import.meta.url));
+const serverRoot = path.resolve(currentDir, '../..');
+const repoRoot = path.resolve(serverRoot, '..');
+
+const dotenvCandidates = [
+  path.join(serverRoot, '.env'),
+  path.join(repoRoot, '.env')
+];
+
+dotenv.config({ path: dotenvCandidates.find((candidate) => existsSync(candidate)) });
 
 const asBool = (value, fallback = false) => {
   if (value == null) return fallback;
