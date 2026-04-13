@@ -9,97 +9,6 @@ const isRateLimitError = (error) => {
   return status === 429 || message.includes('rate limit') || message.includes('api call frequency');
 };
 
-export const fetchFromFinnhub = async (symbol, apiKey) => {
-  if (!apiKey) throw new Error('Missing FINNHUB_API_KEY');
-
-  const [quoteRes, profileRes, candleRes] = await Promise.all([
-    http.get('https://finnhub.io/api/v1/quote', { params: { symbol, token: apiKey } }),
-    http.get('https://finnhub.io/api/v1/stock/profile2', { params: { symbol, token: apiKey } }),
-    http.get('https://finnhub.io/api/v1/stock/candle', {
-      params: {
-        symbol,
-        resolution: '30',
-        from: Math.floor(Date.now() / 1000) - 86400,
-        to: Math.floor(Date.now() / 1000),
-        token: apiKey
-      }
-    })
-  ]);
-
-  const q = quoteRes.data;
-  if (!q || !q.c) throw new Error('Invalid Finnhub quote response');
-
-  const previousClose = Number(q.pc || 0);
-  const currentPrice = Number(q.c || 0);
-  const change = Number(q.d ?? currentPrice - previousClose);
-  const changePercent = Number(q.dp ?? (previousClose ? (change / previousClose) * 100 : 0));
-
-  const chart = Array.isArray(candleRes.data?.c) && Array.isArray(candleRes.data?.t)
-    ? candleRes.data.c.map((price, idx) => ({
-        time: new Date(candleRes.data.t[idx] * 1000).toISOString().slice(11, 16),
-        price: Number(price)
-      }))
-    : [];
-
-  return {
-    symbol,
-    companyName: profileRes.data?.name || symbol,
-    price: currentPrice,
-    change,
-    changePercent,
-    currency: profileRes.data?.currency || 'USD',
-    chart
-  };
-};
-
-export const fetchFromAlphaVantage = async (symbol, apiKey) => {
-  if (!apiKey) throw new Error('Missing ALPHA_VANTAGE_API_KEY');
-
-  const [quoteRes, companyRes, intradayRes] = await Promise.all([
-    http.get('https://www.alphavantage.co/query', {
-      params: { function: 'GLOBAL_QUOTE', symbol, apikey: apiKey }
-    }),
-    http.get('https://www.alphavantage.co/query', {
-      params: { function: 'OVERVIEW', symbol, apikey: apiKey }
-    }),
-    http.get('https://www.alphavantage.co/query', {
-      params: {
-        function: 'TIME_SERIES_INTRADAY',
-        symbol,
-        interval: '30min',
-        outputsize: 'compact',
-        apikey: apiKey
-      }
-    })
-  ]);
-
-  if (quoteRes.data?.Note || intradayRes.data?.Note) {
-    throw new Error('Alpha Vantage rate limit hit');
-  }
-
-  const quote = quoteRes.data?.['Global Quote'];
-  if (!quote || !quote['05. price']) throw new Error('Invalid Alpha Vantage quote response');
-
-  const series = intradayRes.data?.['Time Series (30min)'] || {};
-  const chart = Object.entries(series)
-    .slice(0, 20)
-    .reverse()
-    .map(([timestamp, value]) => ({
-      time: timestamp.slice(11, 16),
-      price: Number(value['4. close'])
-    }));
-
-  return {
-    symbol,
-    companyName: companyRes.data?.Name || symbol,
-    price: Number(quote['05. price']),
-    change: Number(quote['09. change']),
-    changePercent: Number(String(quote['10. change percent']).replace('%', '')),
-    currency: companyRes.data?.Currency || 'USD',
-    chart
-  };
-};
-
 const parseJson = (value) => {
   try {
     return JSON.parse(value);
@@ -151,9 +60,13 @@ const parseYahooQuoteData = (html) => {
   const companyName =
     quoteData?.shortName || streamQuote?.shortName || store?.price?.shortName || symbol;
   const price =
-    quoteData?.regularMarketPrice || streamQuote?.regularMarketPrice?.raw || store?.price?.regularMarketPrice?.raw;
+    quoteData?.regularMarketPrice ||
+    streamQuote?.regularMarketPrice?.raw ||
+    store?.price?.regularMarketPrice?.raw;
   const change =
-    quoteData?.regularMarketChange || streamQuote?.regularMarketChange?.raw || store?.price?.regularMarketChange?.raw;
+    quoteData?.regularMarketChange ||
+    streamQuote?.regularMarketChange?.raw ||
+    store?.price?.regularMarketChange?.raw;
   const changePercent =
     quoteData?.regularMarketChangePercent ||
     streamQuote?.regularMarketChangePercent?.raw ||
@@ -233,12 +146,59 @@ export const fetchFromYahooChartApi = async (symbol) => {
   };
 };
 
-export const fetchWithProviderFallback = async ({ symbol, finnhubKey, alphaKey }) => {
+export const fetchFromAlpaca = async (symbol, apiKey, secretKey) => {
+  if (!apiKey || !secretKey) throw new Error('Missing Alpaca credentials');
+
+  const headers = {
+    'APCA-API-KEY-ID': apiKey,
+    'APCA-API-SECRET-KEY': secretKey
+  };
+
+  const [quoteRes, barRes] = await Promise.all([
+    http.get(`https://data.alpaca.markets/v2/stocks/${encodeURIComponent(symbol)}/quotes/latest`, {
+      headers
+    }),
+    http.get('https://data.alpaca.markets/v2/stocks/bars', {
+      headers,
+      params: {
+        symbols: symbol,
+        timeframe: '30Min',
+        limit: 30,
+        feed: 'iex'
+      }
+    })
+  ]);
+
+  const latestQuote = quoteRes.data?.quote;
+  if (!latestQuote?.ap || !latestQuote?.bp) throw new Error('Invalid Alpaca quote response');
+
+  const price = Number(((latestQuote.ap + latestQuote.bp) / 2).toFixed(4));
+  const bars = barRes.data?.bars?.[symbol] || [];
+  const previousClose = bars.length > 1 ? Number(bars[bars.length - 2]?.c || price) : price;
+  const change = price - previousClose;
+  const changePercent = previousClose ? (change / previousClose) * 100 : 0;
+
+  const chart = bars.map((bar) => ({
+    time: new Date(bar.t).toISOString().slice(11, 16),
+    price: Number(bar.c)
+  }));
+
+  return {
+    symbol,
+    companyName: symbol,
+    price,
+    change,
+    changePercent,
+    currency: 'USD',
+    chart
+  };
+};
+
+export const fetchWithProviderFallback = async ({ symbol, alpacaKey, alpacaSecret }) => {
   const providers = [
-    { name: 'finnhub', fn: () => fetchFromFinnhub(symbol, finnhubKey) },
-    { name: 'alpha_vantage', fn: () => fetchFromAlphaVantage(symbol, alphaKey) },
-    { name: 'yahoo_scrape', fn: () => fetchFromYahooScrape(symbol) },
-    { name: 'yahoo_chart_api', fn: () => fetchFromYahooChartApi(symbol) }
+    { name: 'yahoo_chart_api', fn: () => fetchFromYahooChartApi(symbol) },
+    { name: 'alpaca', fn: () => fetchFromAlpaca(symbol, alpacaKey, alpacaSecret) },
+    { name: 'yahoo_scrape', fn: () => fetchFromYahooScrape(symbol) }
   ];
 
   let lastError;
@@ -258,27 +218,21 @@ export const fetchWithProviderFallback = async ({ symbol, finnhubKey, alphaKey }
   throw lastError || new Error('All stock providers failed');
 };
 
-export const fetchSuggestions = async (query, finnhubKey) => {
+export const fetchSuggestions = async (query) => {
   const q = String(query || '').trim();
   if (q.length < 1) return [];
 
-  if (!finnhubKey) {
-    return [
-      { symbol: q.toUpperCase(), description: `Search ${q.toUpperCase()}` }
-    ];
-  }
-
-  const res = await http.get('https://finnhub.io/api/v1/search', {
-    params: { q, token: finnhubKey }
+  const res = await http.get('https://query1.finance.yahoo.com/v1/finance/search', {
+    params: { q, quotesCount: 8, newsCount: 0 }
   });
 
-  const rows = Array.isArray(res.data?.result) ? res.data.result : [];
+  const rows = Array.isArray(res.data?.quotes) ? res.data.quotes : [];
 
   return rows
-    .filter((row) => row.type === 'Common Stock' || row.type === 'ETF')
+    .filter((row) => row.quoteType === 'EQUITY' || row.quoteType === 'ETF')
     .slice(0, 8)
     .map((row) => ({
       symbol: row.symbol,
-      description: row.description || row.symbol
+      description: row.shortname || row.longname || row.symbol
     }));
 };

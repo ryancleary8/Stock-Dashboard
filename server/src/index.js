@@ -36,8 +36,8 @@ app.get('/api/stock', async (req, res, next) => {
     const symbol = normalizeSymbol(req.query.symbol);
     const { quote, provider } = await fetchWithProviderFallback({
       symbol,
-      finnhubKey: process.env.FINNHUB_API_KEY,
-      alphaKey: process.env.ALPHA_VANTAGE_API_KEY
+      alpacaKey: process.env.ALPACA_API_KEY,
+      alpacaSecret: process.env.ALPACA_SECRET_KEY
     });
 
     res.json(ensureQuote(quote, provider));
@@ -51,7 +51,7 @@ app.get('/api/suggest', async (req, res, next) => {
     const q = String(req.query.q || '').trim();
     if (!q) return res.json([]);
 
-    const suggestions = await fetchSuggestions(q, process.env.FINNHUB_API_KEY);
+    const suggestions = await fetchSuggestions(q);
     res.json(suggestions);
   } catch (error) {
     next(error);

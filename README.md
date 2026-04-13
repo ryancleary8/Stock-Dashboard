@@ -20,7 +20,7 @@ A production-ready stock search application with a React + Tailwind frontend and
 
 - **Frontend:** React (Vite), Tailwind CSS, Recharts
 - **Backend:** Node.js, Express, Axios, Cheerio
-- **Data sources:** Finnhub, Alpha Vantage, Yahoo Finance scraping fallback
+- **Data sources:** Yahoo Finance API, Alpaca API, Yahoo Finance scraping fallback
 
 ## Project Structure
 
@@ -35,8 +35,8 @@ Create `server/.env`:
 
 ```bash
 PORT=4000
-FINNHUB_API_KEY=your_finnhub_key
-ALPHA_VANTAGE_API_KEY=your_alpha_vantage_key
+ALPACA_API_KEY=your_alpaca_key
+ALPACA_SECRET_KEY=your_alpaca_secret
 ```
 
 > The app still works without API keys by using scraping fallback (subject to source availability).
@@ -72,7 +72,7 @@ Returns:
   "change": -1.12,
   "changePercent": -0.59,
   "currency": "USD",
-  "source": "finnhub",
+  "source": "yahoo_chart_api",
   "chart": [
     { "time": "09:30", "price": 186.8 },
     { "time": "10:00", "price": 187.1 }
@@ -88,8 +88,8 @@ Returns ticker suggestions for typeahead.
 ## How fallback scraping works
 
 1. Backend first tries quote providers in order:
-   - Finnhub
-   - Alpha Vantage
+   - Yahoo Finance chart API
+   - Alpaca API (if credentials are present)
 2. If API errors, missing keys, or rate limits occur, backend automatically scrapes Yahoo Finance page data.
 3. Scraped results are normalized into the same JSON shape as API responses.
 4. Frontend remains source-agnostic and only consumes normalized data.
