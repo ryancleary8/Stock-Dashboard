@@ -4,18 +4,10 @@ import PriceChart from '../components/PriceChart';
 import SearchInput from '../components/SearchInput';
 import { useAuth } from '../context/AuthContext';
 import { useDebounce } from '../hooks/useDebounce';
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+import { fetchJSON } from '../lib/api';
 const RECENT_KEY = 'stock-dashboard-recent';
 const FAVORITES_KEY = 'stock-dashboard-favorites';
 
-const fetchJSON = async (url, options) => {
-  const res = await fetch(url, options);
-  if (res.status === 204) return null;
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.message || 'Request failed');
-  return data;
-};
 
 function DashboardPage() {
   const { user, loading: authLoading, logout } = useAuth();
@@ -49,7 +41,7 @@ function DashboardPage() {
   };
 
   const loadUserRecents = async () => {
-    const data = await fetchJSON(`${API_BASE}/api/user/recent-searches`, {
+    const data = await fetchJSON('/api/user/recent-searches', {
       credentials: 'include'
     });
     return data.recentSearches.map((item) => item.symbol);
@@ -57,7 +49,7 @@ function DashboardPage() {
 
   const saveRecent = async (normalized) => {
     if (user) {
-      await fetchJSON(`${API_BASE}/api/user/recent-searches`, {
+      await fetchJSON('/api/user/recent-searches', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -96,7 +88,7 @@ function DashboardPage() {
     setError('');
 
     try {
-      const data = await fetchJSON(`${API_BASE}/api/stock?symbol=${encodeURIComponent(normalized)}`);
+      const data = await fetchJSON(`/api/stock?symbol=${encodeURIComponent(normalized)}`);
       setStock(data);
       await saveRecent(normalized);
     } catch (err) {
@@ -134,7 +126,7 @@ function DashboardPage() {
       }
 
       try {
-        const items = await fetchJSON(`${API_BASE}/api/suggest?q=${encodeURIComponent(debouncedQuery)}`);
+        const items = await fetchJSON(`/api/suggest?q=${encodeURIComponent(debouncedQuery)}`);
         if (!cancelled) setSuggestions(items);
       } catch {
         if (!cancelled) setSuggestions([]);

@@ -1,24 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+import { fetchJSON } from '../lib/api';
 
 const AuthContext = createContext(null);
-
-const fetchJSON = async (path, options = {}) => {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers || {})
-    }
-  });
-
-  if (res.status === 204) return null;
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.message || 'Request failed');
-  return data;
-};
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
