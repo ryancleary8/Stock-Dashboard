@@ -14,6 +14,10 @@ const dotenvCandidates = [
 
 dotenv.config({ path: dotenvCandidates.find((candidate) => existsSync(candidate)) });
 
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = 'file:./dev.db';
+}
+
 const asBool = (value, fallback = false) => {
   if (value == null) return fallback;
   return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
@@ -33,5 +37,5 @@ export const env = {
   cookieName: process.env.AUTH_COOKIE_NAME || 'stockdash_session',
   cookieSecure: asBool(process.env.COOKIE_SECURE, process.env.NODE_ENV === 'production'),
   cookieSameSite: process.env.COOKIE_SAMESITE || 'lax',
-  databaseUrl: process.env.DATABASE_URL || 'file:./dev.db'
+  databaseUrl: process.env.DATABASE_URL
 };
